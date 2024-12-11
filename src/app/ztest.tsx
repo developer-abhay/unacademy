@@ -35,8 +35,6 @@ const Video = () => {
                 videoElement.srcObject = localStreamRef.current;
             }
 
-            return;
-
         } catch (error: unknown) {
             console.error('Error accessing media devices.', error);
         }
@@ -55,7 +53,8 @@ const Video = () => {
 
             // socket on message
             socketRef.current.onmessage = async (message) => {
-
+                // const reader = await new Response(message.data).text();
+                // const data = JSON.parse(reader);
                 const data = JSON.parse(await message.data.text());
                 console.log(data);
 
@@ -69,8 +68,7 @@ const Video = () => {
                     console.log('answer')
                     console.log(peerConnection.current.signalingState);
                     await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data));
-                } else if (data.candidate && peerConnection.current) {
-                    console.log('candidate')
+                } else if (data.type == "candidate" && peerConnection.current) {
                     await peerConnection.current.addIceCandidate(new RTCIceCandidate(data));
                 }
             }
@@ -84,45 +82,11 @@ const Video = () => {
                 if (remoteVideoElement) remoteVideoElement.srcObject = null;
 
                 console.log("WebSocket closed");
+                // setTimeout(wsConnection, 2000); // Reconnect after 2 seconds
             };
 
 
         }
-    }
-
-    // Set peer connection
-    const setPeerCOnnection = async () => {
-        const remoteVideo = document.querySelector('video#remoteVideo') as HTMLVideoElement;
-
-        const configuration = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        };
-        peerConnection.current = new RTCPeerConnection(configuration);
-
-        if (localStreamRef.current) {
-            console.log('true')
-            localStreamRef.current.getTracks().forEach(track => peerConnection.current?.addTrack(track, localStreamRef.current as MediaStream));
-        }
-
-        peerConnection.current.ontrack = (event) => {
-            console.log('tracked')
-            // Add remote tracks to the remoteStream
-            if (!remoteStreamRef.current) {
-                remoteStreamRef.current = new MediaStream();
-                remoteVideo.srcObject = remoteStreamRef.current;
-            }
-            remoteStreamRef.current.addTrack(event.track);
-        };
-
-        peerConnection.current.onicecandidate = (event) => {
-            console.log('ice canditate')
-            if (event.candidate) {
-                // Send the candidate to the remote peer through signaling
-                if (socketRef.current) {
-                    socketRef.current.send(JSON.stringify(event.candidate));
-                }
-            }
-        };
     }
 
     // handle click 
@@ -140,12 +104,35 @@ const Video = () => {
     }
 
     useEffect(() => {
-        getLocalStream().then(() => {
-            wsConnection();
-            setPeerCOnnection()
-        });
+        getLocalStream();
+        wsConnection();
 
+        const remoteVideo = document.querySelector('video#remoteVideo') as HTMLVideoElement;
 
+        const configuration = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+        peerConnection.current = new RTCPeerConnection(configuration);
+
+        localStreamRef.current?.getTracks().forEach(track => peerConnection.current?.addTrack(track, localStreamRef.current!));
+
+        peerConnection.current.ontrack = (event) => {
+            // Add remote tracks to the remoteStream
+            if (!remoteStreamRef.current) {
+                remoteStreamRef.current = new MediaStream();
+                remoteVideo.srcObject = remoteStreamRef.current;
+            }
+            remoteStreamRef.current.addTrack(event.track);
+        };
+
+        peerConnection.current.onicecandidate = (event) => {
+            if (event.candidate) {
+                // Send the candidate to the remote peer through signaling
+                if (socketRef.current) {
+                    socketRef.current.send(JSON.stringify({ candidate: event.candidate }));
+                }
+            }
+        };
 
         // return () => {
         //     if (socketRef.current) {
